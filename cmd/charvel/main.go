@@ -28,16 +28,12 @@ func processMetaCommand(command string) bool {
 	return false
 }
 
-func execute(statement *sql.Statement) {
-	fmt.Println("Executing: ", statement.ToString())
-}
-
 func processCommand(command string) bool {
 	if command[0] == '$' {
 		return processMetaCommand(command)
 	}
 	statement := sql.Prepare(command)
-	execute(statement)
+	sql.Execute(statement)
 	return false
 }
 
