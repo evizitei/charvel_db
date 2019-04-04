@@ -32,7 +32,11 @@ func processCommand(command string) bool {
 	if command[0] == '$' {
 		return processMetaCommand(command)
 	}
-	statement := sql.Prepare(command)
+	statement, err := sql.Prepare(command)
+	if err != nil {
+		fmt.Println("Error in statement construction: ", err)
+		return false
+	}
 	sql.Execute(statement)
 	return false
 }
