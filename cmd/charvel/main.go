@@ -20,34 +20,38 @@ func readCommand(cmdBuf *bufio.Reader) string {
 	return command
 }
 
-func processMetaCommand(command string) bool {
+func processMetaCommand(command string, engine *sql.Engine) bool {
 	if command == "$exit" || command == "$quit" {
 		return true
+	} else if command == "$print" {
+		fmt.Println(engine.TableStateString())
+		return false
 	}
 	fmt.Println("UNRECOGNIZED COMMAND: ", command)
 	return false
 }
 
-func processCommand(command string) bool {
+func processCommand(command string, engine *sql.Engine) bool {
 	if command[0] == '$' {
-		return processMetaCommand(command)
+		return processMetaCommand(command, engine)
 	}
-	statement, err := sql.Prepare(command)
+	statement, err := engine.Prepare(command)
 	if err != nil {
 		fmt.Println("Error in statement construction: ", err)
 		return false
 	}
-	sql.Execute(statement)
+	engine.Execute(statement)
 	return false
 }
 
 func main() {
 	fmt.Println("DB Terminal")
 	flag.Parse()
+	sqlEngine := sql.NewEngine()
 	commandBuffer := bufio.NewReader(os.Stdin)
 	for {
 		command := readCommand(commandBuffer)
-		quit := processCommand(command)
+		quit := processCommand(command, sqlEngine)
 		if quit {
 			break
 		}
