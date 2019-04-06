@@ -45,7 +45,7 @@ func processCommand(command string, engine *sql.Engine) bool {
 }
 
 func main() {
-	fmt.Println("DB Terminal")
+	fmt.Println("Charvel DB Terminal")
 	flag.Parse()
 	sqlEngine := sql.NewEngine()
 	commandBuffer := bufio.NewReader(os.Stdin)
