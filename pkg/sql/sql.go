@@ -101,6 +101,44 @@ const tableMaxPages = 100
 const rowsPerPage = pageSize / rowSize
 const tableMaxRows = rowsPerPage * tableMaxPages
 
+/*Pager is an abstraction layer for the table.
+It keeps pages cached in memory, and also knows
+how to read and write them from disk. This
+way the table can ask for a given page, and the
+Pager will take care of figuring out whether
+it's already in memory or not. */
+type Pager struct {
+	pageCache *[tableMaxPages][pageSize]byte
+}
+
+func NewPager() *Pager {
+	return &Pager{
+		pageCache: &[tableMaxPages][pageSize]byte{},
+	}
+}
+
+func (p *Pager) Write(address TableAddress, rowBytes []byte) {
+	for i, byteVal := range rowBytes {
+		if i >= rowSize {
+			break
+		}
+		p.pageCache[address.PageNum][address.ByteOffset+i] = byteVal
+	}
+}
+
+func (p *Pager) Read(address TableAddress) [rowSize]byte {
+	rowBytes := [rowSize]byte{}
+	recByteOffset := 0
+	for {
+		if recByteOffset >= rowSize {
+			break
+		}
+		rowBytes[recByteOffset] = p.pageCache[address.PageNum][address.ByteOffset+recByteOffset]
+		recByteOffset++
+	}
+	return rowBytes
+}
+
 /*
 TableAddress is a simple way to pass around
 a specific memory address (offset really)
@@ -115,7 +153,7 @@ Table is the storage engine, managing how
 records are serialized and deserialized
 into bytes in memory*/
 type Table struct {
-	pages   [tableMaxPages][pageSize]byte
+	pager   *Pager
 	numRows int
 }
 
@@ -144,12 +182,7 @@ in the current table*/
 func (t *Table) Append(row *Row) error {
 	address := t.NextRowAddress()
 	rowBytes := row.Serialize().Bytes()
-	for i, byteVal := range rowBytes {
-		if i >= rowSize {
-			break
-		}
-		t.pages[address.PageNum][address.ByteOffset+i] = byteVal
-	}
+	t.pager.Write(address, rowBytes)
 	t.numRows = t.numRows + 1
 	return nil
 }
@@ -158,15 +191,7 @@ func (t *Table) Append(row *Row) error {
 in the record pages and rehydrate
 the row object that lives there*/
 func (t *Table) FetchRow(address TableAddress) *Row {
-	rowBytes := [rowSize]byte{}
-	recByteOffset := 0
-	for {
-		if recByteOffset >= rowSize {
-			break
-		}
-		rowBytes[recByteOffset] = t.pages[address.PageNum][address.ByteOffset+recByteOffset]
-		recByteOffset++
-	}
+	rowBytes := t.pager.Read(address)
 	return DeserializeRow(&rowBytes)
 }
 
@@ -236,7 +261,9 @@ It will take care of creating tablestate
 for now*/
 func NewEngine() *Engine {
 	return &Engine{
-		usersTable: &Table{},
+		usersTable: &Table{
+			pager: NewPager(),
+		},
 	}
 }
 
@@ -268,6 +295,7 @@ it to the dataset*/
 func (e *Engine) Execute(statement *Statement) {
 	if statement.isSelect() {
 		fmt.Println("Executing select...")
+		fmt.Println(e.usersTable.ToString())
 	} else if statement.isInsert() {
 		fmt.Println("Inserting this row!")
 		fmt.Println(statement.rowToInsert.ToString())
