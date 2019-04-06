@@ -5,6 +5,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -100,6 +103,7 @@ const pageSize = 4096
 const tableMaxPages = 100
 const rowsPerPage = pageSize / rowSize
 const tableMaxRows = rowsPerPage * tableMaxPages
+const dbFile = "./charvel.db"
 
 /*Pager is an abstraction layer for the table.
 It keeps pages cached in memory, and also knows
@@ -108,13 +112,45 @@ way the table can ask for a given page, and the
 Pager will take care of figuring out whether
 it's already in memory or not. */
 type Pager struct {
-	pageCache *[tableMaxPages][pageSize]byte
+	pageCache    *[tableMaxPages][pageSize]byte
+	cacheIndex   *map[int]bool
+	file         *os.File
+	fileReadSize int64
 }
 
-func NewPager() *Pager {
-	return &Pager{
-		pageCache: &[tableMaxPages][pageSize]byte{},
+/*NewPager is the constructor for a pager
+to take care of allocating system resources for a file
+and memory space for a page cache*/
+func NewPager(dbFileName string) *Pager {
+	if dbFileName == "default" {
+		dbFileName = dbFile
 	}
+	fd, err := os.OpenFile(dbFileName, os.O_RDWR|os.O_CREATE, 0755)
+	if err != nil {
+		log.Fatal("Could not open db file: ", err)
+	}
+	fInfo, err := fd.Stat()
+	if err != nil {
+		log.Fatal("Could not get db file info: ", err)
+	}
+	cIndex := make(map[int]bool)
+	return &Pager{
+		pageCache:    &[tableMaxPages][pageSize]byte{},
+		cacheIndex:   &cIndex,
+		file:         fd,
+		fileReadSize: fInfo.Size(),
+	}
+}
+
+func (p *Pager) Flush(pageIdx int, writeSize int) {
+	pageOffset := int64(pageIdx * pageSize)
+	p.file.Seek(pageOffset, 0)
+	pageBytes := p.pageCache[pageIdx][0:writeSize]
+	p.file.Write(pageBytes)
+}
+
+func (p *Pager) Close() {
+	p.file.Close()
 }
 
 func (p *Pager) Write(address TableAddress, rowBytes []byte) {
@@ -126,7 +162,23 @@ func (p *Pager) Write(address TableAddress, rowBytes []byte) {
 	}
 }
 
+func (p *Pager) cachePage(pageNum int) {
+	p.file.Seek(int64(pageNum*pageSize), 0)
+	pageBuffer := make([]byte, pageSize)
+	_, err := p.file.Read(pageBuffer)
+	if err != nil && err != io.EOF {
+		log.Fatal("Failed to cache page ", err)
+	}
+	for i, byteVal := range pageBuffer {
+		p.pageCache[pageNum][i] = byteVal
+	}
+}
+
 func (p *Pager) Read(address TableAddress) [rowSize]byte {
+	loaded, ok := (*p.cacheIndex)[address.PageNum]
+	if !ok || !loaded {
+		p.cachePage(address.PageNum)
+	}
 	rowBytes := [rowSize]byte{}
 	recByteOffset := 0
 	for {
@@ -262,7 +314,7 @@ for now*/
 func NewEngine() *Engine {
 	return &Engine{
 		usersTable: &Table{
-			pager: NewPager(),
+			pager: NewPager("default"),
 		},
 	}
 }

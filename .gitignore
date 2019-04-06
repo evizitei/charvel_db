@@ -1,1 +1,2 @@
 cmd/charvel/charvel
+pkg/sql/test_file.db
