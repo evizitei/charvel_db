@@ -1,20 +1,62 @@
 package sql
 
-import "testing"
+import (
+	"fmt"
+	"os"
+	"testing"
+)
+
+const TestFileName = "./test_file.db"
+
+func ClearTestFile() {
+	_, err := os.Stat(TestFileName)
+	if os.IsNotExist(err) {
+		return
+	}
+	os.Remove(TestFileName)
+}
 
 func TestPagerFileStore(t *testing.T) {
-	testFileName := "./test_file.db"
-	pager := NewPager(testFileName)
+	ClearTestFile()
+	pager := NewPager(TestFileName)
 	row := NewRow(42, "testUser", "test@test.com")
 	rowBytes := row.Serialize()
 	address := TableAddress{PageNum: 0, ByteOffset: 0}
 	pager.Write(address, rowBytes.Bytes())
 	pager.Flush(0, rowSize)
 	pager.Close()
-	pager = NewPager(testFileName)
+	pager = NewPager(TestFileName)
 	readBytes := pager.Read(address)
 	readRow := DeserializeRow(&readBytes)
 	if readRow.ID != row.ID {
 		t.Error("pager should persist to disk")
 	}
+	ClearTestFile()
+}
+
+func TestReadingRowcount(t *testing.T) {
+	ClearTestFile()
+	table := NewTable(TestFileName)
+	if table.numRows != 0 {
+		t.Error("Blank file should count as 0 rows")
+	}
+	rowCount := 200
+	for i := 1; i <= rowCount; i++ {
+		username := fmt.Sprintf("User %d", i)
+		email := fmt.Sprintf("user.%d@test.com", i)
+		row := NewRow(int32(i), username, email)
+		err := table.Append(row)
+		if err != nil {
+			t.Error("Error, duroing append: ", err)
+		}
+	}
+	if table.numRows != rowCount {
+		t.Error("Did not persist correct row count: ", table.numRows)
+	}
+	table.Close()
+	table = NewTable(TestFileName)
+	if table.numRows != rowCount {
+		t.Error("Did not recover rowcount from file: ", table.numRows)
+	}
+	ClearTestFile()
 }

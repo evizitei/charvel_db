@@ -99,9 +99,10 @@ func DeserializeRow(rowBytes *[rowSize]byte) *Row {
 }
 
 // Table Constants for in-memory representation
-const pageSize = 4096
+const pageConstraintSize = 4096
 const tableMaxPages = 100
-const rowsPerPage = pageSize / rowSize
+const rowsPerPage = pageConstraintSize / rowSize
+const actualPageSize = rowsPerPage * rowSize
 const tableMaxRows = rowsPerPage * tableMaxPages
 const dbFile = "./charvel.db"
 
@@ -112,7 +113,7 @@ way the table can ask for a given page, and the
 Pager will take care of figuring out whether
 it's already in memory or not. */
 type Pager struct {
-	pageCache    *[tableMaxPages][pageSize]byte
+	pageCache    *[tableMaxPages][actualPageSize]byte
 	cacheIndex   *map[int]bool
 	file         *os.File
 	fileReadSize int64
@@ -135,15 +136,16 @@ func NewPager(dbFileName string) *Pager {
 	}
 	cIndex := make(map[int]bool)
 	return &Pager{
-		pageCache:    &[tableMaxPages][pageSize]byte{},
+		pageCache:    &[tableMaxPages][actualPageSize]byte{},
 		cacheIndex:   &cIndex,
 		file:         fd,
 		fileReadSize: fInfo.Size(),
 	}
 }
 
+/*Flush one page to disk*/
 func (p *Pager) Flush(pageIdx int, writeSize int) {
-	pageOffset := int64(pageIdx * pageSize)
+	pageOffset := int64(pageIdx * actualPageSize)
 	p.file.Seek(pageOffset, 0)
 	pageBytes := p.pageCache[pageIdx][0:writeSize]
 	p.file.Write(pageBytes)
@@ -163,8 +165,8 @@ func (p *Pager) Write(address TableAddress, rowBytes []byte) {
 }
 
 func (p *Pager) cachePage(pageNum int) {
-	p.file.Seek(int64(pageNum*pageSize), 0)
-	pageBuffer := make([]byte, pageSize)
+	p.file.Seek(int64(pageNum*actualPageSize), 0)
+	pageBuffer := make([]byte, actualPageSize)
 	_, err := p.file.Read(pageBuffer)
 	if err != nil && err != io.EOF {
 		log.Fatal("Failed to cache page ", err)
@@ -207,6 +209,19 @@ into bytes in memory*/
 type Table struct {
 	pager   *Pager
 	numRows int
+}
+
+/*NewTable is a constructor for the table object.
+While booting, it will evaluate the table size
+from the file size on disk.*/
+func NewTable(dbFileName string) *Table {
+	pager := NewPager(dbFileName)
+	rowCount := pager.fileReadSize / rowSize
+	fmt.Println("TABLE LOAD: read size", pager.fileReadSize)
+	fmt.Println("TABLE LOAD: row size", rowSize)
+	fmt.Println("TABLE LOAD: row count", rowCount)
+	table := &Table{pager: pager, numRows: int(rowCount)}
+	return table
 }
 
 /*FetchAddress performs the conversion
@@ -269,6 +284,18 @@ func (t *Table) ToString() string {
 	return builder.String()
 }
 
+/*Close flushes the whole table to disk
+and closes the db file*/
+func (t *Table) Close() {
+	pageCount := t.numRows / rowsPerPage
+	for i := 0; i < pageCount; i++ {
+		t.pager.Flush(i, actualPageSize)
+	}
+	extraRows := t.numRows % rowsPerPage
+	t.pager.Flush(pageCount, extraRows*rowSize)
+	t.pager.Close()
+}
+
 /*
 Statement is a wrapper for
 preparaing SQL commands and paasasing them to the executor */
@@ -312,11 +339,7 @@ type Engine struct {
 It will take care of creating tablestate
 for now*/
 func NewEngine() *Engine {
-	return &Engine{
-		usersTable: &Table{
-			pager: NewPager("default"),
-		},
-	}
+	return &Engine{usersTable: NewTable("default")}
 }
 
 /*
