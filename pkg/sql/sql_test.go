@@ -87,7 +87,7 @@ func TestTableString(t *testing.T) {
 		t.Error("Failed to append records", err)
 	}
 	tableState := table.ToString()
-	if !strings.Contains(tableState, "User 2") {
+	if !strings.Contains(tableState, "User 5") {
 		t.Error("table should have 5 records: ", tableState)
 	}
 	if strings.Contains(tableState, "User 6") {

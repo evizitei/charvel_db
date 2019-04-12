@@ -278,22 +278,15 @@ func (t *Table) FetchRow(address TableAddress) *Row {
 by dumping the current state of the table
 to the output*/
 func (t *Table) ToString() string {
-	rowNum := 0
 	builder := strings.Builder{}
 	builder.WriteString("Row Count: ")
 	builder.WriteString(strconv.Itoa(t.numRows))
 	builder.WriteString("\n")
-	//cur := NewCursor(t, "iterator")
-
-	for {
-		if rowNum >= t.numRows {
-			break
-		}
-		address := t.FetchAddress(rowNum)
-		row := t.FetchRow(address)
+	cur := NewCursor(t, "iterator")
+	for cur.Advance() {
+		row := cur.GetRow()
 		builder.WriteString(row.ToString())
 		builder.WriteString("\n")
-		rowNum++
 	}
 	return builder.String()
 }
@@ -321,6 +314,12 @@ type Cursor struct {
 from on the underlying table.*/
 func (c *Cursor) GetAddress() TableAddress {
 	return c.Table.FetchAddress(c.rowIndex)
+}
+
+/*GetRow uses the cursor position
+to load the current row from the table*/
+func (c *Cursor) GetRow() *Row {
+	return c.Table.FetchRow(c.GetAddress())
 }
 
 /*Advance just moves the cursor forward through
