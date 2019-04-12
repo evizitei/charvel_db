@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unsafe"
 )
 
 const idSize = 4
@@ -446,3 +447,29 @@ debugging current state*/
 func (e *Engine) TableStateString() string {
 	return e.usersTable.ToString()
 }
+
+type nodeType int32
+
+const (
+	internalNode nodeType = 0
+	leafNode     nodeType = 1
+)
+
+const nodeTypeSize int32 = int32(unsafe.Sizeof(internalNode))
+const nodeTypeOffset int32 = 0
+const isRootSize int32 = int32(unsafe.Sizeof(internalNode))
+const isRootOffset int32 = nodeTypeOffset + nodeTypeSize
+const parentPointerSize int32 = int32(unsafe.Sizeof(int32(0)))
+const parentPointerOffset int32 = isRootOffset + isRootSize
+const nodeCommonHeaderSize int32 = nodeTypeSize + isRootSize + parentPointerSize
+const leafNodeNumCellsSize int32 = int32(unsafe.Sizeof(int32(0)))
+const leafNodeNumCellsOffset int32 = nodeCommonHeaderSize
+const leafNodeHeaderSize int32 = nodeCommonHeaderSize + leafNodeNumCellsSize
+
+const leafNodeKeySize int32 = int32(unsafe.Sizeof(int32(0)))
+const leafNodeKeyOffset int32 = 0
+const leafNodeValueSize int32 = rowSize
+const leafNodeValueOffset int32 = leafNodeKeyOffset + leafNodeKeySize
+const leafNodeCellSize int32 = leafNodeKeySize + leafNodeValueSize
+const leafNodeCellSpace int32 = pageConstraintSize - leafNodeHeaderSize
+const leafNodeMaxCells int32 = leafNodeCellSpace / leafNodeCellSize
