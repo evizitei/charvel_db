@@ -151,11 +151,17 @@ func (p *Pager) Flush(pageIdx int, writeSize int) {
 	p.file.Write(pageBytes)
 }
 
+/*Close makes the underlying file close
+cleanly so we don't end up leaving
+the file un-flushed*/
 func (p *Pager) Close() {
 	p.file.Close()
 }
 
+/*Write sends the bytes for a record to a specific address,
+first making sure the page for the target address is loaded into memory*/
 func (p *Pager) Write(address TableAddress, rowBytes []byte) {
+	p.checkPage(address.PageNum)
 	for i, byteVal := range rowBytes {
 		if i >= rowSize {
 			break
@@ -174,13 +180,19 @@ func (p *Pager) cachePage(pageNum int) {
 	for i, byteVal := range pageBuffer {
 		p.pageCache[pageNum][i] = byteVal
 	}
+
+}
+
+func (p *Pager) checkPage(pageNum int) {
+	loaded, ok := (*p.cacheIndex)[pageNum]
+	if !ok || !loaded {
+		p.cachePage(pageNum)
+		(*p.cacheIndex)[pageNum] = true
+	}
 }
 
 func (p *Pager) Read(address TableAddress) [rowSize]byte {
-	loaded, ok := (*p.cacheIndex)[address.PageNum]
-	if !ok || !loaded {
-		p.cachePage(address.PageNum)
-	}
+	p.checkPage(address.PageNum)
 	rowBytes := [rowSize]byte{}
 	recByteOffset := 0
 	for {
@@ -217,9 +229,9 @@ from the file size on disk.*/
 func NewTable(dbFileName string) *Table {
 	pager := NewPager(dbFileName)
 	rowCount := pager.fileReadSize / rowSize
-	fmt.Println("TABLE LOAD: read size", pager.fileReadSize)
+	/*fmt.Println("TABLE LOAD: read size", pager.fileReadSize)
 	fmt.Println("TABLE LOAD: row size", rowSize)
-	fmt.Println("TABLE LOAD: row count", rowCount)
+	fmt.Println("TABLE LOAD: row count", rowCount)*/
 	table := &Table{pager: pager, numRows: int(rowCount)}
 	return table
 }
@@ -271,6 +283,8 @@ func (t *Table) ToString() string {
 	builder.WriteString("Row Count: ")
 	builder.WriteString(strconv.Itoa(t.numRows))
 	builder.WriteString("\n")
+	//cur := NewCursor(t, "iterator")
+
 	for {
 		if rowNum >= t.numRows {
 			break
@@ -294,6 +308,49 @@ func (t *Table) Close() {
 	extraRows := t.numRows % rowsPerPage
 	t.pager.Flush(pageCount, extraRows*rowSize)
 	t.pager.Close()
+}
+
+/*Cursor is a way to hold an offset in a table
+so you can scan forward or backward*/
+type Cursor struct {
+	Table    *Table
+	rowIndex int
+}
+
+/*GetAddress returns the address to read/write
+from on the underlying table.*/
+func (c *Cursor) GetAddress() TableAddress {
+	return c.Table.FetchAddress(c.rowIndex)
+}
+
+/*Advance just moves the cursor forward through
+the table, returning true if we're still
+within the table*/
+func (c *Cursor) Advance() bool {
+	c.rowIndex++
+	return !c.BeyondTable()
+}
+
+/*BeyondTable is true if the offset is outside
+the range of rows for which we have real data*/
+func (c *Cursor) BeyondTable() bool {
+	return c.rowIndex >= c.Table.numRows || c.rowIndex < 0
+}
+
+/*NewCursor sets up the offset at the beginning
+or end of the table. The iterator mode
+offsets to -1 because it expects a for loop
+to call Advance before it's accessed anything*/
+func NewCursor(t *Table, mode string) *Cursor {
+	cursor := &Cursor{Table: t}
+	if mode == "start" {
+		cursor.rowIndex = 0
+	} else if mode == "iterator" {
+		cursor.rowIndex = -1
+	} else if mode == "end" {
+		cursor.rowIndex = t.numRows - 1
+	}
+	return cursor
 }
 
 /*

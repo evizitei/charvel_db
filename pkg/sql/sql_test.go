@@ -3,6 +3,7 @@ package sql
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -75,6 +76,22 @@ func TestAddressFetching(t *testing.T) {
 	row1Address := table.FetchAddress(0)
 	if row1Address.PageNum != 0 || row1Address.ByteOffset != 0 {
 		t.Error("Row Offset for addressing is off: ", row1Address)
+	}
+}
+
+func TestTableString(t *testing.T) {
+	ClearTestFile()
+	table := NewTable(TestFileName)
+	err := WriteRecords(5, table)
+	if err != nil {
+		t.Error("Failed to append records", err)
+	}
+	tableState := table.ToString()
+	if !strings.Contains(tableState, "User 2") {
+		t.Error("table should have 5 records: ", tableState)
+	}
+	if strings.Contains(tableState, "User 6") {
+		t.Error("Table should have cut off at 5", tableState)
 	}
 }
 
