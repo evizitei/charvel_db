@@ -58,18 +58,8 @@ NewRow is a constructor that deals with the string
 to fixed byte array issue*/
 func NewRow(id int32, name string, email string) *Row {
 	row := &Row{ID: id}
-	for i, char := range name {
-		if i >= usernameSize {
-			break
-		}
-		row.Username[i] = byte(char)
-	}
-	for i, char := range email {
-		if i >= emailSize {
-			break
-		}
-		row.Email[i] = byte(char)
-	}
+	copy(row.Username[:], []byte(name))
+	copy(row.Email[:], []byte(email))
 	return row
 }
 
@@ -82,20 +72,8 @@ func DeserializeRow(rowBytes *[rowSize]byte) *Row {
 	rowBuffer := bytes.NewBuffer(rowBytes[0:rowSize])
 	binary.Read(rowBuffer, binary.BigEndian, &rowID)
 	row.ID = rowID
-	usernameBytes := rowBuffer.Next(usernameSize)
-	for i, byteVal := range usernameBytes {
-		if i >= usernameSize {
-			break
-		}
-		row.Username[i] = byteVal
-	}
-	emailBytes := rowBuffer.Next(emailSize)
-	for i, byteVal := range emailBytes {
-		if i >= emailSize {
-			break
-		}
-		row.Email[i] = byteVal
-	}
+	copy(row.Username[:], rowBuffer.Next(usernameSize))
+	copy(row.Email[:], rowBuffer.Next(emailSize))
 	return row
 }
 
@@ -163,12 +141,8 @@ func (p *Pager) Close() {
 first making sure the page for the target address is loaded into memory*/
 func (p *Pager) Write(address TableAddress, rowBytes []byte) {
 	p.checkPage(address.PageNum)
-	for i, byteVal := range rowBytes {
-		if i >= rowSize {
-			break
-		}
-		p.pageCache[address.PageNum][address.ByteOffset+i] = byteVal
-	}
+	targetBytes := p.pageCache[address.PageNum][address.ByteOffset : address.ByteOffset+rowSize]
+	copy(targetBytes, rowBytes)
 }
 
 func (p *Pager) cachePage(pageNum int) {
@@ -195,14 +169,7 @@ func (p *Pager) checkPage(pageNum int) {
 func (p *Pager) Read(address TableAddress) [rowSize]byte {
 	p.checkPage(address.PageNum)
 	rowBytes := [rowSize]byte{}
-	recByteOffset := 0
-	for {
-		if recByteOffset >= rowSize {
-			break
-		}
-		rowBytes[recByteOffset] = p.pageCache[address.PageNum][address.ByteOffset+recByteOffset]
-		recByteOffset++
-	}
+	copy(rowBytes[:], p.pageCache[address.PageNum][address.ByteOffset:address.ByteOffset+rowSize])
 	return rowBytes
 }
 
